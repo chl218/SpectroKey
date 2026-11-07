@@ -13,14 +13,22 @@ The page needs to be served over `http://localhost` (or HTTPS) — browsers only
 allow microphone access on secure origins, and ES modules don't load from
 `file://`.
 
-From this folder, start any static server, for example:
+From this folder, start the bundled dev server:
 
 ```bash
-python -m http.server 8000
+python scripts/serve.py
 ```
 
-Then open <http://localhost:8000> and click **Start mic**. Allow microphone
-access when the browser asks.
+(or `npm run serve`; add `--port 9000` for a different port). Then open
+<http://localhost:8000> and click **Start mic**. Allow microphone access when
+the browser asks.
+
+The dev server is deliberately locked down. It listens on `127.0.0.1` only, serves
+just this folder, shows no directory listings, never serves hidden paths
+such as `.git`, and rejects requests whose `Host` isn't localhost (which
+stops DNS-rebinding pages from reading your files). Prefer it over
+`python -m http.server`, which lists directories, serves `.git`, and
+listens on every network interface.
 
 ## Using it
 
@@ -39,9 +47,10 @@ time scrolls right to left. Brighter = louder.
 
 The display controls apply to both the live view and the recorded clip.
 
-Below the controls, the **Echo** box repeats whatever you type, as you type
-it. The text stays on the page: it isn't saved, sent anywhere, or tied to
-recordings.
+Below the controls, the **Echo** box repeats whatever you type under
+**Output**, as you type it. Press **Enter** to clear the box; Output keeps
+showing the last line. The text stays on the page: it isn't saved, sent
+anywhere, or tied to recordings.
 
 ### Studying a recording
 
@@ -82,6 +91,7 @@ After you stop recording, the clip appears in the lower panel.
 | `src/audio.js`, `src/recorder-worklet.js` | Microphone and recording |
 | `src/live.js`, `src/analysis.js`, `src/app.js` | Live view, clip panel, UI wiring |
 | `src/echo.js` | Echo box |
+| `scripts/serve.py` | Locked-down local dev server |
 
 ## Tests
 
@@ -89,4 +99,10 @@ The math modules are unit-tested with Node's built-in test runner (Node 20+):
 
 ```bash
 npm test
+```
+
+The dev server has its own tests (Python 3):
+
+```bash
+npm run test:server
 ```

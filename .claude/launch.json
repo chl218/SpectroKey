@@ -1,1 +1,1 @@
-{"version":"0.0.1","configurations":[{"name":"spectrokey","runtimeExecutable":"python","runtimeArgs":["-m","http.server","8000"],"port":8000}]}
+{"version":"0.0.1","configurations":[{"name":"spectrokey","runtimeExecutable":"python","runtimeArgs":["scripts/serve.py","--port","8000"],"port":8000}]}
