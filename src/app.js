@@ -28,7 +28,7 @@ const ERRORS = {
 
 let lut = colormapLut(el.colormap.value);
 let view = null;
-const analysis = createAnalysisView(el.analysisCanvas, el.readout);
+const analysis = createAnalysisView(el.analysisCanvas, el.readout, (msg) => setStatus(msg, true));
 let starting = false;
 
 function setStatus(text, isError = false) {
@@ -45,6 +45,16 @@ function getOpts() {
 
 // --- canvas sizing and axis labels ---
 function sampleRate() { return state.mic ? state.mic.ctx.sampleRate : 48000; }
+
+function safeRerender() {
+  if (!state.clip) return;
+  try {
+    analysis.rerender(getOpts());
+  } catch (err) {
+    console.error(err);
+    setStatus('Could not draw the recording.', true);
+  }
+}
 
 function drawAxis(axisEl, canvas, sr) {
   const h = canvas.height;
@@ -89,7 +99,7 @@ function drawAxes() {
 }
 function layout() {
   sizeCanvas(el.live);
-  if (state.clip) analysis.rerender(getOpts());
+  safeRerender();
   drawAxes();
 }
 
@@ -147,7 +157,14 @@ function finishRecording(samples, autoStopped = false) {
   const hasAudio = samples.length > 0;
   el.exportPng.disabled = !hasAudio;
   el.exportWav.disabled = !hasAudio;
-  analysis.show(samples, sampleRate, getOpts());
+  try {
+    analysis.show(samples, sampleRate, getOpts());
+  } catch (err) {
+    console.error(err);
+    drawAxes();
+    setStatus('Could not draw the recording.', true);
+    return;
+  }
   drawAxes();
   if (autoStopped) setStatus(`Recording stopped at ${MAX_SECONDS} s limit.`);
   else setStatus(`Recorded ${(samples.length / sampleRate).toFixed(1)} s`);
@@ -188,15 +205,15 @@ el.clear.addEventListener('click', () => {
 });
 el.fft.addEventListener('change', () => {
   if (state.mic) state.mic.analyser.fftSize = Number(el.fft.value);
-  if (state.clip) analysis.rerender(getOpts());
+  safeRerender();
 });
 el.scale.addEventListener('change', () => {
-  if (state.clip) analysis.rerender(getOpts());
+  safeRerender();
   drawAxes();
 });
 el.colormap.addEventListener('change', () => {
   lut = colormapLut(el.colormap.value);
-  if (state.clip) analysis.rerender(getOpts());
+  safeRerender();
 });
 el.exportPng.addEventListener('click', () => analysis.exportPng());
 el.exportWav.addEventListener('click', () => analysis.exportWav());
@@ -211,7 +228,7 @@ function onDb(moved) {
   }
   el.floorOut.textContent = el.floor.value;
   el.ceilOut.textContent = el.ceil.value;
-  if (state.clip) analysis.rerender(getOpts());
+  safeRerender();
 }
 el.floor.addEventListener('input', () => onDb('floor'));
 el.ceil.addEventListener('input', () => onDb('ceil'));

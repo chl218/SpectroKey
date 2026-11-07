@@ -20,7 +20,7 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function createAnalysisView(canvas, readoutEl) {
+export function createAnalysisView(canvas, readoutEl, onError = () => {}) {
   const ctx2d = canvas.getContext('2d');
   const wrap = canvas.parentElement;
 
@@ -173,7 +173,10 @@ export function createAnalysisView(canvas, readoutEl) {
   // --- exports ---
   function exportPng() {
     if (!frames.length) return;
-    canvas.toBlob((blob) => { if (blob) download(blob, `spectrokey-${stamp()}.png`); }, 'image/png');
+    canvas.toBlob((blob) => {
+      if (blob) download(blob, `spectrokey-${stamp()}.png`);
+      else onError('Could not export the image.');
+    }, 'image/png');
   }
 
   function exportWav() {
