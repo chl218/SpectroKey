@@ -1,6 +1,13 @@
 // Browser-only: scrolling live spectrogram drawn from an AnalyserNode.
 import { paintColumn } from './render.js';
 
+// AnalyserNode dB = 20*log10(|X[k]| / N) with a Blackman window, whose coherent
+// gain (mean of the window) is ~0.42: a full-scale sine reads 20*log10(0.42/2)
+// ~ -13.6 dB. dsp.magnitudeDb uses 2|X| / windowSum, where that sine reads 0 dB.
+// Adding this offset puts both views on the same full-scale reference
+// (0 dB = full-scale sine), so the floor/ceiling sliders mean the same thing.
+export const ANALYSER_TO_FULL_SCALE_DB = 20 * Math.log10(2 / 0.42); // ~ +13.56
+
 export function createLiveView(canvas, analyser, getOpts) {
   const ctx2d = canvas.getContext('2d');
   let raf = 0;
@@ -17,6 +24,8 @@ export function createLiveView(canvas, analyser, getOpts) {
     const bins = analyser.frequencyBinCount;
     if (!freq || freq.length !== bins) freq = new Float32Array(bins);
     analyser.getFloatFrequencyData(freq);
+    // -Infinity (silent bins) stays -Infinity.
+    for (let k = 0; k < bins; k++) freq[k] += ANALYSER_TO_FULL_SCALE_DB;
 
     if (!img || img.height !== height) img = ctx2d.createImageData(1, height);
     const opts = { ...getOpts(), sampleRate: analyser.context.sampleRate };
