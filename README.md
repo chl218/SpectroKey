@@ -42,7 +42,8 @@ is the highest frequency it can capture.
 |---|---|
 | **Start mic** | Starts listening. Shows "Mic on" while running. |
 | **Record / Stop** | Records the microphone. Stops on its own after 30 s. |
-| **Clear** | Wipes the live view. |
+| **Clear** | Wipes the live view and its history. |
+| **Pause / Resume** | Freezes the live view so you can look back. While paused, **drag** the view sideways, use the **mouse wheel or trackpad**, or click it and press **← / →** (Shift for a full screen) to scroll through the last ~60 seconds. The status line shows how far back you are. Resume jumps back to now. A recording in progress keeps recording while paused. |
 | **FFT** | Window size, 512–8192. Larger = finer frequency detail, coarser time detail. |
 | **Scale** | Linear (0–10,000 Hz) or Log (20–10,000 Hz) frequency axis. Log spreads out the low end, which suits voice and music. |
 | **Colormap** | viridis, magma, or gray. |
@@ -94,6 +95,7 @@ seconds along the bottom.
 | `src/wav.js`, `src/clip.js` | WAV encoding, 30 s capped sample buffer |
 | `src/audio.js`, `src/recorder-worklet.js` | Microphone and recording |
 | `src/live.js`, `src/analysis.js`, `src/app.js` | Live view, clip panel, UI wiring |
+| `src/history.js` | Ring buffer behind the live view's scroll-back history |
 | `src/echo.js` | Echo box |
 | `scripts/serve.py` | Locked-down local dev server |
 

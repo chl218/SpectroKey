@@ -14,7 +14,7 @@ const el = {
   live: $('live-canvas'), analysisCanvas: $('analysis-canvas'),
   liveAxis: $('live-axis'), analysisAxis: $('analysis-axis'),
   overlay: $('live-overlay'), overlayMsg: $('live-overlay-msg'), retry: $('retry'),
-  start: $('start'), record: $('record'), clear: $('clear'),
+  start: $('start'), record: $('record'), clear: $('clear'), pause: $('pause'),
   fft: $('fft'), scale: $('scale'), colormap: $('colormap'),
   floor: $('floor'), ceil: $('ceil'), floorOut: $('floor-out'), ceilOut: $('ceil-out'),
   status: $('status'), readout: $('readout'),
@@ -151,6 +151,7 @@ async function onStart() {
     view.start();
     el.start.textContent = 'Mic on';
     el.record.disabled = false;
+    el.pause.disabled = false;
     drawAxes();
     setStatus('Listening.');
   } catch (err) {
@@ -217,11 +218,90 @@ el.start.addEventListener('click', onStart);
 el.retry.addEventListener('click', onStart);
 el.record.addEventListener('click', onRecord);
 el.clear.addEventListener('click', () => {
-  if (view) { view.clear(); return; }
+  if (view) {
+    view.clear();
+    if (view.isPaused()) showPausedStatus();
+    return;
+  }
   const c = el.live.getContext('2d');
   c.fillStyle = '#000';
   c.fillRect(0, 0, el.live.width, el.live.height);
 });
+
+// --- pause and scroll back through the live history ---
+function showPausedStatus() {
+  const ago = view.secondsAgo();
+  setStatus(ago < 0.05
+    ? 'Paused · drag, scroll, or use ← → to look back'
+    : `Paused · showing ${ago.toFixed(1)} s ago`);
+}
+
+function onPause() {
+  if (!view) return;
+  const pausing = !view.isPaused();
+  if (pausing) view.pause(); else view.resume();
+  scrollCarry = 0;
+  el.pause.textContent = pausing ? 'Resume' : 'Pause';
+  el.pause.setAttribute('aria-pressed', String(pausing));
+  el.live.classList.toggle('paused', pausing);
+  if (pausing) showPausedStatus();
+  else setStatus(state.recording ? 'Recording...' : 'Listening.');
+}
+
+// Scroll by fractional columns, carrying the remainder so slow drags and
+// small wheel steps still add up. Positive = further back in time.
+let scrollCarry = 0;
+function scrollColumns(columns) {
+  if (!view || !view.isPaused()) return;
+  scrollCarry += columns;
+  const whole = Math.trunc(scrollCarry);
+  if (!whole) return;
+  scrollCarry -= whole;
+  view.scrollBy(whole);
+  showPausedStatus();
+}
+// Canvas backing pixels (= history columns) per CSS pixel.
+function columnsPerCssPx() {
+  return el.live.clientWidth ? el.live.width / el.live.clientWidth : 1;
+}
+
+let dragX = null;
+el.live.addEventListener('pointerdown', (e) => {
+  if (!view || !view.isPaused() || e.button !== 0) return;
+  dragX = e.clientX;
+  el.live.setPointerCapture(e.pointerId);
+  el.live.classList.add('dragging');
+});
+el.live.addEventListener('pointermove', (e) => {
+  if (dragX === null) return;
+  // Dragging right pulls older history into view.
+  scrollColumns((e.clientX - dragX) * columnsPerCssPx());
+  dragX = e.clientX;
+});
+function endLiveDrag() {
+  dragX = null;
+  el.live.classList.remove('dragging');
+}
+el.live.addEventListener('pointerup', endLiveDrag);
+el.live.addEventListener('pointercancel', endLiveDrag);
+
+el.live.addEventListener('wheel', (e) => {
+  if (!view || !view.isPaused()) return;
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.live.clientWidth : 1;
+  const delta = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * unit;
+  // Scrolling down/right moves toward now; up/left goes back in time.
+  scrollColumns(-delta * columnsPerCssPx());
+}, { passive: false });
+
+el.live.addEventListener('keydown', (e) => {
+  if (!view || !view.isPaused() || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  e.preventDefault();
+  const step = e.shiftKey ? el.live.width : Math.max(1, Math.round(el.live.width / 10));
+  scrollColumns(e.key === 'ArrowLeft' ? step : -step);
+});
+
+el.pause.addEventListener('click', onPause);
 el.fft.addEventListener('change', async () => {
   if (state.mic) state.mic.analyser.fftSize = Number(el.fft.value);
   if (!state.clip || !state.clip.samples.length) { safeRerender(); return; }
