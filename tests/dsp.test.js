@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hann, fft, magnitudeDb } from '../src/dsp.js';
+import { hann, fft, magnitudeDb, stft } from '../src/dsp.js';
 
 test('hann endpoints ~0, center 1', () => {
   const w = hann(1025);
@@ -72,4 +72,36 @@ test('magnitudeDb: full-scale windowed sine ≈ 0 dB', () => {
 test('magnitudeDb: silence clamps to floor, no -Infinity/NaN', () => {
   const db = magnitudeDb(new Float32Array(16), new Float32Array(16), 8, -120);
   assert.ok(db.every(v => v === -120));
+});
+
+test('stft frame count', () => {
+  assert.equal(stft(new Float32Array(4096), 1024, 256).length, 13);
+});
+
+test('stft: clip shorter than window gives 1 padded frame', () => {
+  const f = stft(new Float32Array(100).fill(0.5), 1024, 256);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].length, 512);
+  assert.ok(f[0].every(Number.isFinite));
+});
+
+test('stft: empty clip gives 1 frame at floor', () => {
+  assert.ok(stft(new Float32Array(0), 512, 128)[0].every(v => v === -120));
+});
+
+test('stft: 1 kHz tone peaks at 1 kHz bin', () => {
+  const sr = 48000;
+  const size = 2048;
+  const x = new Float32Array(sr / 2);
+  for (let i = 0; i < x.length; i++) x[i] = Math.sin((2 * Math.PI * 1000 * i) / sr);
+  const frames = stft(x, size, size / 4);
+  const expected = Math.round((1000 * size) / sr);
+  assert.equal(expected, 43);
+  assert.ok(frames.length > 1);
+  for (const col of frames) {
+    assert.equal(col.length, size / 2);
+    let best = 0;
+    for (let k = 1; k < col.length; k++) if (col[k] > col[best]) best = k;
+    assert.ok(Math.abs(best - expected) <= 1, `peak bin ${best}`);
+  }
 });

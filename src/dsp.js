@@ -76,3 +76,31 @@ export function magnitudeDb(re, im, windowSum, floorDb = -120) {
   }
   return out;
 }
+
+/**
+ * Short-time Fourier transform: one dB column (fftSize/2 bins) per frame.
+ * Frames start every `hop` samples; a frame running past the end is zero-padded.
+ * Frame count = max(1, 1 + floor((n - fftSize) / hop)), so empty or short clips
+ * still yield one frame.
+ */
+export function stft(samples, fftSize, hop, floorDb = -120) {
+  const w = hann(fftSize);
+  let windowSum = 0;
+  for (let i = 0; i < fftSize; i++) windowSum += w[i];
+  const frameCount = Math.max(1, 1 + Math.floor((samples.length - fftSize) / hop));
+  const re = new Float32Array(fftSize);
+  const im = new Float32Array(fftSize);
+  const frames = [];
+  for (let f = 0; f < frameCount; f++) {
+    const start = f * hop;
+    // Refill every frame: fft works in place, so re/im hold the previous spectrum.
+    for (let i = 0; i < fftSize; i++) {
+      const s = start + i;
+      re[i] = s < samples.length ? samples[s] * w[i] : 0;
+      im[i] = 0;
+    }
+    fft(re, im);
+    frames.push(magnitudeDb(re, im, windowSum, floorDb));
+  }
+  return frames;
+}
