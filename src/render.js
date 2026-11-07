@@ -1,4 +1,5 @@
-// Pure rendering math: colormaps, dB scaling, and canvas-row -> frequency mapping.
+// Pure rendering math: colormaps, dB scaling, canvas-row -> frequency mapping,
+// and time pooling of frames into pixel columns.
 // No DOM access; paintColumn works on any {width, height, data} RGBA image.
 
 const ANCHORS = {
@@ -39,6 +40,7 @@ export function dbToUnit(db, floorDb, ceilDb) {
 }
 
 // Single source of truth for row -> Hz. Row 0 is the top (highest frequency).
+// `row` may be fractional: row +/- 0.5 gives the frequency at a row's edges.
 function rowHz(row, height, sampleRate, scale) {
   const nyquist = sampleRate / 2;
   const t = height > 1 ? (height - 1 - row) / (height - 1) : 1;
@@ -46,23 +48,74 @@ function rowHz(row, height, sampleRate, scale) {
   return t * nyquist;
 }
 
+// Hz -> fractional bin, unclamped. Bin k sits at k * nyquist / binCount Hz,
+// the same convention for both scales.
+function hzToBin(hz, binCount, sampleRate) {
+  return (hz / (sampleRate / 2)) * binCount;
+}
+
 export function rowToHz(row, height, sampleRate, scale) {
   return rowHz(row, height, sampleRate, scale);
 }
 
 export function rowToBin(row, height, binCount, sampleRate, scale) {
-  const nyquist = sampleRate / 2;
-  const bin = (rowHz(row, height, sampleRate, scale) / nyquist) * (scale === 'log' ? binCount : binCount - 1);
+  const bin = hzToBin(rowHz(row, height, sampleRate, scale), binCount, sampleRate);
   return Math.min(Math.max(bin, 0), binCount - 1);
 }
 
+/**
+ * Inclusive bin range [lo, hi] that canvas `row` covers: every bin whose
+ * centre lies between the row's lower edge (row + 0.5) and upper edge
+ * (row - 0.5), clamped to [0, binCount - 1]. When rows outnumber bins the
+ * range would be empty, so it always includes the bin nearest the row centre.
+ */
+export function rowBinRange(row, height, binCount, sampleRate, scale) {
+  const last = binCount - 1;
+  const lowEdge = hzToBin(rowHz(row + 0.5, height, sampleRate, scale), binCount, sampleRate);
+  const highEdge = hzToBin(rowHz(row - 0.5, height, sampleRate, scale), binCount, sampleRate);
+  const nearest = Math.round(rowToBin(row, height, binCount, sampleRate, scale));
+  // Half-open [lowEdge, highEdge) so a bin on a shared edge belongs to one row only.
+  const lo = Math.min(Math.max(Math.ceil(lowEdge), 0), nearest);
+  const hi = Math.max(Math.min(Math.ceil(highEdge) - 1, last), nearest);
+  return [lo, hi];
+}
+
+// paintColumn runs ~60 times a second in the live view; the ranges only change
+// when the geometry does, so keep the last table.
+let rangeKey = '';
+let rangeTable = null;
+function rowRanges(height, binCount, sampleRate, scale) {
+  const key = `${height}|${binCount}|${sampleRate}|${scale}`;
+  if (key !== rangeKey) {
+    rangeTable = new Int32Array(height * 2);
+    for (let row = 0; row < height; row++) {
+      const [lo, hi] = rowBinRange(row, height, binCount, sampleRate, scale);
+      rangeTable[row * 2] = lo;
+      rangeTable[row * 2 + 1] = hi;
+    }
+    rangeKey = key;
+  }
+  return rangeTable;
+}
+
+// Loudest dB over the inclusive bin range [lo, hi].
+export function maxDb(column, lo, hi) {
+  let m = -Infinity;
+  for (let k = lo; k <= hi; k++) if (column[k] > m) m = column[k];
+  return m;
+}
+
+/**
+ * Paint one dB column into image column x. Each row takes the max dB over the
+ * bins it covers, so a narrow tone stays bright even with more bins than rows.
+ */
 export function paintColumn(img, x, column, opts) {
   const { floorDb, ceilDb, scale, sampleRate, lut } = opts;
   const { width, height, data } = img;
-  const binCount = column.length;
+  const ranges = rowRanges(height, column.length, sampleRate, scale);
   for (let row = 0; row < height; row++) {
-    const bin = Math.round(rowToBin(row, height, binCount, sampleRate, scale));
-    const unit = dbToUnit(column[bin], floorDb, ceilDb);
+    const db = maxDb(column, ranges[row * 2], ranges[row * 2 + 1]);
+    const unit = dbToUnit(db, floorDb, ceilDb);
     const li = Math.round(unit * 255) * 3;
     const p = (row * width + x) * 4;
     data[p] = lut[li];
@@ -70,4 +123,38 @@ export function paintColumn(img, x, column, opts) {
     data[p + 2] = lut[li + 2];
     data[p + 3] = 255;
   }
+}
+
+/**
+ * Frames [a, b) that pixel column c shows when frames [start, end) are spread
+ * over `columns` pixel columns. Every column gets at least one frame.
+ */
+export function columnFrameRange(c, start, end, columns) {
+  const n = end - start;
+  if (columns >= n) return [start + c, start + c + 1];
+  const a = start + Math.floor((c * n) / columns);
+  const b = start + Math.floor(((c + 1) * n) / columns);
+  return [a, Math.max(b, a + 1)];
+}
+
+/**
+ * Max-pool frames [start, end) into `columns` dB columns (per bin, loudest
+ * frame wins), so a short loud event survives downsampling in time. With at
+ * least as many columns as frames, returns the frames themselves (no copy).
+ */
+export function poolFrames(frames, start, end, columns) {
+  const n = end - start;
+  if (columns >= n) return frames.slice(start, end);
+  const bins = frames[start].length;
+  const out = [];
+  for (let c = 0; c < columns; c++) {
+    const [a, b] = columnFrameRange(c, start, end, columns);
+    const col = new Float32Array(frames[a]);
+    for (let f = a + 1; f < b; f++) {
+      const fr = frames[f];
+      for (let k = 0; k < bins; k++) if (fr[k] > col[k]) col[k] = fr[k];
+    }
+    out.push(col);
+  }
+  return out;
 }
