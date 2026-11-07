@@ -68,6 +68,7 @@
   #echo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
   #echo-in { flex: 1 1 200px; min-width: 0; font: inherit; padding: 6px 8px; border-radius: 6px;
     border: 1px solid var(--border); background: var(--panel); color: var(--fg); }
+  .echo-label { flex-basis: 100%; }
   #echo-out { flex-basis: 100%; min-height: 1.4em; white-space: pre-wrap; overflow-wrap: anywhere; }
   #analysis { margin-top: 8px; }
   #readout { margin-top: 8px; font-size: 0.9rem; color: var(--muted); }
@@ -109,7 +110,8 @@
 <div id="echo">
   <label for="echo-in">Echo</label>
   <input id="echo-in" type="text" placeholder="Type something" autocomplete="off">
-  <output id="echo-out" for="echo-in" aria-live="polite"></output>
+  <span class="echo-label" id="echo-out-label">Output</span>
+  <output id="echo-out" for="echo-in" aria-labelledby="echo-out-label" aria-live="polite"></output>
 </div>
 
 <div id="status" role="status" aria-live="polite"></div>

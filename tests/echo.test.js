@@ -8,7 +8,7 @@ function fakeInput(value = '') {
   return {
     value,
     addEventListener(type, fn) { (listeners[type] ??= []).push(fn); },
-    fire(type) { (listeners[type] ?? []).forEach((fn) => fn()); },
+    fire(type, event) { (listeners[type] ?? []).forEach((fn) => fn(event)); },
   };
 }
 
@@ -39,4 +39,31 @@ test('shows any text already in the input when wired', () => {
   const input = fakeInput('preset'); const output = { textContent: '' };
   wireEcho(input, output);
   assert.equal(output.textContent, 'preset');
+});
+
+test('Enter clears the input but Output keeps the last line', () => {
+  const input = fakeInput(); const output = { textContent: '' };
+  wireEcho(input, output);
+  input.value = 'last line'; input.fire('input');
+  let prevented = false;
+  input.fire('keydown', { key: 'Enter', isComposing: false, preventDefault() { prevented = true; } });
+  assert.equal(input.value, '');
+  assert.equal(output.textContent, 'last line');
+  assert.equal(prevented, true);
+});
+
+test('other keys do not clear the input', () => {
+  const input = fakeInput(); const output = { textContent: '' };
+  wireEcho(input, output);
+  input.value = 'abc'; input.fire('input');
+  input.fire('keydown', { key: 'a', isComposing: false, preventDefault() {} });
+  assert.equal(input.value, 'abc');
+});
+
+test('Enter while composing (IME) does not clear', () => {
+  const input = fakeInput(); const output = { textContent: '' };
+  wireEcho(input, output);
+  input.value = 'にほ'; input.fire('input');
+  input.fire('keydown', { key: 'Enter', isComposing: true, preventDefault() {} });
+  assert.equal(input.value, 'にほ');
 });
