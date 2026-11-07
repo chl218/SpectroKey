@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  colormapLut, dbToUnit, rowToBin, rowToHz, rowBinRange, paintColumn, poolFrames, columnFrameRange,
+  colormapLut, dbToUnit, rowToBin, rowToHz, MAX_HZ, topHz, timeTicks, formatSeconds, rowBinRange, paintColumn, poolFrames, columnFrameRange,
 } from '../src/render.js';
 
 test('lut ends match anchors', () => {
@@ -22,9 +22,9 @@ test('dbToUnit floor >= ceil returns 0, not NaN', () => {
   assert.equal(dbToUnit(-50, -30, -40), 0);
 });
 
-test('linear: top row = last bin, bottom = bin 0', () => {
-  assert.equal(rowToBin(0, 100, 1024, 48000, 'linear'), 1023);
-  assert.equal(rowToBin(99, 100, 1024, 48000, 'linear'), 0);
+test('linear: top row = last bin, bottom = bin 0 (Nyquist at 10 kHz)', () => {
+  assert.equal(rowToBin(0, 100, 1024, 20000, 'linear'), 1023);
+  assert.equal(rowToBin(99, 100, 1024, 20000, 'linear'), 0);
 });
 
 test('log: every row finite and in range', () => {
@@ -38,10 +38,32 @@ test('log: bottom row ≈ 20 Hz', () => {
   assert.ok(Math.abs(rowToHz(199, 200, 48000, 'log') - 20) < 1);
 });
 
-test('rowToHz: top row is Nyquist, linear bottom is 0', () => {
-  assert.equal(rowToHz(0, 100, 48000, 'linear'), 24000);
+test('rowToHz: top row is capped at 10 kHz, linear bottom is 0', () => {
+  assert.equal(MAX_HZ, 10000);
+  assert.equal(rowToHz(0, 100, 48000, 'linear'), 10000);
   assert.equal(rowToHz(99, 100, 48000, 'linear'), 0);
-  assert.ok(Math.abs(rowToHz(0, 200, 48000, 'log') - 24000) < 1e-6);
+  assert.ok(Math.abs(rowToHz(0, 200, 48000, 'log') - 10000) < 1e-6);
+});
+
+test('rowToHz: below a 20 kHz sample rate the top is Nyquist', () => {
+  assert.equal(topHz(16000), 8000);
+  assert.equal(topHz(48000), 10000);
+  assert.equal(rowToHz(0, 100, 16000, 'linear'), 8000);
+  assert.ok(Math.abs(rowToHz(0, 100, 16000, 'log') - 8000) < 1e-6);
+});
+
+test('linear at 48 kHz: top row maps to the 10 kHz bin', () => {
+  // 10000 / 24000 * 1024 = 426.67
+  assert.ok(Math.abs(rowToBin(0, 100, 1024, 48000, 'linear') - 10000 / 24000 * 1024) < 1e-9);
+});
+
+test('paintColumn: energy above 10 kHz is not drawn', () => {
+  const lut = colormapLut('gray');
+  const img = { width: 1, height: 400, data: new Uint8ClampedArray(400 * 4) };
+  const column = new Float32Array(4096).fill(-120);
+  column[Math.round(15000 / 24000 * 4096)] = 0; // 15 kHz tone at 48 kHz
+  paintColumn(img, 0, column, { floorDb: -100, ceilDb: -10, scale: 'linear', sampleRate: 48000, lut });
+  for (let r = 0; r < 400; r++) assert.equal(img.data[r * 4], 0, `row ${r}`);
 });
 
 test('height 1 does not produce NaN', () => {
@@ -54,7 +76,7 @@ test('paintColumn writes opaque pixels in column x only', () => {
   const img = { width: 3, height: 4, data: new Uint8ClampedArray(3 * 4 * 4) };
   const column = new Float32Array([-100, -80, -50, -10]);
   const lut = colormapLut('gray');
-  paintColumn(img, 1, column, { floorDb: -100, ceilDb: -10, scale: 'linear', sampleRate: 48000, lut });
+  paintColumn(img, 1, column, { floorDb: -100, ceilDb: -10, scale: 'linear', sampleRate: 20000, lut });
   for (let y = 0; y < 4; y++) {
     for (let x = 0; x < 3; x++) {
       const i = (y * 3 + x) * 4;
@@ -73,12 +95,13 @@ test('paintColumn writes opaque pixels in column x only', () => {
 
 // A single 0 dB bin among -120 dB bins must reach the brightest LUT colour in some row,
 // even when there are many more bins than rows (FFT 8192 -> 4096 bins, 400 rows).
+// A 20 kHz rate puts Nyquist at the 10 kHz display top, so every bin is on screen.
 function brightestRowFor(binCount, height, peakBin, scale) {
   const lut = colormapLut('gray');
   const img = { width: 1, height, data: new Uint8ClampedArray(height * 4) };
   const column = new Float32Array(binCount).fill(-120);
   column[peakBin] = 0;
-  paintColumn(img, 0, column, { floorDb: -100, ceilDb: -10, scale, sampleRate: 48000, lut });
+  paintColumn(img, 0, column, { floorDb: -100, ceilDb: -10, scale, sampleRate: 20000, lut });
   let best = 0;
   for (let r = 0; r < height; r++) best = Math.max(best, img.data[r * 4]);
   return best;
@@ -93,7 +116,7 @@ test('paintColumn: a peak between sampled bins is not lost (linear)', () => {
 });
 
 test('paintColumn: a peak between sampled bins is not lost (log)', () => {
-  // Bins below 20 Hz (0..3 at 5.86 Hz/bin) are off the log scale; start above.
+  // Bins below 20 Hz (0..8 at 2.44 Hz/bin) are off the log scale; start above.
   for (const bin of [171, 175, 1029, 3001, 4095]) {
     assert.equal(brightestRowFor(4096, 400, bin, 'log'), 255, `bin ${bin}`);
   }
@@ -108,7 +131,7 @@ test('paintColumn: every bin is visible somewhere (linear, many bins)', () => {
 test('rowBinRange: linear rows tile the bins with no gaps or overlaps', () => {
   let expected = 4095;
   for (let r = 0; r < 400; r++) {
-    const [lo, hi] = rowBinRange(r, 400, 4096, 48000, 'linear');
+    const [lo, hi] = rowBinRange(r, 400, 4096, 20000, 'linear');
     assert.ok(lo <= hi, `row ${r}`);
     assert.equal(hi, expected, `row ${r} top`);
     expected = lo - 1;
@@ -157,4 +180,30 @@ test('columnFrameRange: columns partition the frames in order', () => {
     next = b;
   }
   assert.equal(next, 1007);
+});
+
+test('timeTicks: tidy steps that fit the space', () => {
+  assert.deepEqual(timeTicks(0, 3, 7).ticks, [0, 0.5, 1, 1.5, 2, 2.5, 3]);
+  assert.equal(timeTicks(0, 3, 7).step, 0.5);
+  assert.deepEqual(timeTicks(0, 30, 8).ticks, [0, 5, 10, 15, 20, 25, 30]);
+  assert.deepEqual(timeTicks(1.234, 1.29, 6).ticks, [1.24, 1.25, 1.26, 1.27, 1.28, 1.29]);
+});
+
+test('timeTicks: never more than maxTicks, and stays inside the range', () => {
+  for (const [t0, t1, max] of [[0, 30, 3], [0.1, 0.2, 2], [2.7, 29.9, 10], [0, 0.05, 20]]) {
+    const { ticks } = timeTicks(t0, t1, max);
+    assert.ok(ticks.length <= max, `${t0}-${t1}`);
+    for (const t of ticks) assert.ok(t >= t0 - 1e-9 && t <= t1 + 1e-9, `${t} in ${t0}-${t1}`);
+  }
+});
+
+test('timeTicks: empty or reversed range gives no ticks', () => {
+  assert.deepEqual(timeTicks(1, 1, 5).ticks, []);
+  assert.deepEqual(timeTicks(2, 1, 5).ticks, []);
+});
+
+test('formatSeconds: decimals follow the step', () => {
+  assert.equal(formatSeconds(1.5, 0.5), '1.5 s');
+  assert.equal(formatSeconds(10, 5), '10 s');
+  assert.equal(formatSeconds(1.24, 0.01), '1.24 s');
 });

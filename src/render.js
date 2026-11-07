@@ -10,6 +10,14 @@ const ANCHORS = {
 
 const LOG_MIN_HZ = 20;
 
+// The displayed frequency range tops out here: speech and music live below it.
+export const MAX_HZ = 10000;
+
+// Highest frequency shown: 10 kHz, or Nyquist if the device can't reach it.
+export function topHz(sampleRate) {
+  return Math.min(MAX_HZ, sampleRate / 2);
+}
+
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -39,13 +47,14 @@ export function dbToUnit(db, floorDb, ceilDb) {
   return u > 1 ? 1 : u;
 }
 
-// Single source of truth for row -> Hz. Row 0 is the top (highest frequency).
-// `row` may be fractional: row +/- 0.5 gives the frequency at a row's edges.
+// Single source of truth for row -> Hz. Row 0 is the top (topHz), the bottom
+// row is 0 Hz (linear) or 20 Hz (log). `row` may be fractional: row +/- 0.5
+// gives the frequency at a row's edges.
 function rowHz(row, height, sampleRate, scale) {
-  const nyquist = sampleRate / 2;
+  const top = topHz(sampleRate);
   const t = height > 1 ? (height - 1 - row) / (height - 1) : 1;
-  if (scale === 'log') return LOG_MIN_HZ * (nyquist / LOG_MIN_HZ) ** t;
-  return t * nyquist;
+  if (scale === 'log') return LOG_MIN_HZ * (top / LOG_MIN_HZ) ** t;
+  return t * top;
 }
 
 // Hz -> fractional bin, unclamped. Bin k sits at k * nyquist / binCount Hz,
@@ -123,6 +132,30 @@ export function paintColumn(img, x, column, opts) {
     data[p + 2] = lut[li + 2];
     data[p + 3] = 255;
   }
+}
+
+const TIME_STEPS = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60];
+
+/**
+ * Time-axis ticks for [t0, t1] seconds: the smallest tidy step giving at most
+ * `maxTicks` ticks, and the multiples of that step inside the range.
+ */
+export function timeTicks(t0, t1, maxTicks) {
+  if (!(t1 > t0) || maxTicks < 1) return { step: 0, ticks: [] };
+  const eps = 1e-9;
+  const count = (s) => Math.floor(t1 / s + eps) - Math.ceil(t0 / s - eps) + 1;
+  const step = TIME_STEPS.find((s) => count(s) <= maxTicks) ?? TIME_STEPS[TIME_STEPS.length - 1];
+  const ticks = [];
+  for (let k = Math.ceil(t0 / step - eps); k <= Math.floor(t1 / step + eps); k++) {
+    ticks.push(Number((k * step).toFixed(2))); // 0.1 * 3 -> 0.3, not 0.30000000000000004
+  }
+  return { step, ticks };
+}
+
+// "1.5 s": as many decimals as the tick step needs.
+export function formatSeconds(t, step) {
+  const decimals = step < 0.1 ? 2 : step < 1 ? 1 : 0;
+  return `${t.toFixed(decimals)} s`;
 }
 
 /**

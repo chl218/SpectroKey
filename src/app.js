@@ -1,6 +1,6 @@
 // Page wiring: mic, recording, controls, axis labels, error states.
 import { startMic, MicError, startRecording } from './audio.js';
-import { colormapLut, rowToHz } from './render.js';
+import { colormapLut, rowToHz, topHz } from './render.js';
 import { createLiveView } from './live.js';
 import { createAnalysisView } from './analysis.js';
 import { wireEcho } from './echo.js';
@@ -37,7 +37,9 @@ let fftToken = 0; // newest FFT-size change wins
 
 let lut = colormapLut(el.colormap.value);
 let view = null;
-const analysis = createAnalysisView(el.analysisCanvas, el.readout, (msg) => setStatus(msg, true));
+const analysis = createAnalysisView(
+  el.analysisCanvas, el.readout, (msg) => setStatus(msg, true), $('analysis-time-axis'),
+);
 let starting = false;
 
 function setStatus(text, isError = false) {
@@ -67,15 +69,15 @@ function safeRerender() {
 
 function drawAxis(axisEl, canvas, sr) {
   const h = canvas.height;
-  const nyquist = sr / 2;
+  const top = topHz(sr);
   const log = el.scale.value === 'log';
   const marks = log
-    ? [100, 500, 1000, 2000, 5000, 10000, 20000]
-    : [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round((f * nyquist) / 100) * 100);
+    ? [50, 100, 200, 500, 1000, 2000, 5000, 10000]
+    : [0, 1, 2, 3, 4, 5].map((i) => Math.round((i * top) / 5 / 100) * 100);
   axisEl.textContent = '';
   if (!h) return;
   for (const hz of marks) {
-    if (hz > nyquist || (log && hz < 20)) continue;
+    if (hz > top || (log && hz < 20)) continue;
     // Find the row whose frequency is closest to hz (rowToHz decreases with row).
     let lo = 0, hi = h - 1;
     while (lo < hi) {

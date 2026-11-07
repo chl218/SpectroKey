@@ -32,8 +32,11 @@ listens on every network interface.
 
 ## Using it
 
-The top canvas is the **live view**: frequency runs bottom (low) to top (high),
-time scrolls right to left. Brighter = louder.
+The top canvas is the **live view**: frequency (Hz) runs up the left side from
+0 to 10,000 Hz, and time scrolls right to left, newest on the right.
+Brighter = louder. Both views stop at 10 kHz, where almost all speech and
+music energy sits. On a device whose sample rate is below 20 kHz, the top
+is the highest frequency it can capture.
 
 | Control | What it does |
 |---|---|
@@ -41,20 +44,21 @@ time scrolls right to left. Brighter = louder.
 | **Record / Stop** | Records the microphone. Stops on its own after 30 s. |
 | **Clear** | Wipes the live view. |
 | **FFT** | Window size, 512–8192. Larger = finer frequency detail, coarser time detail. |
-| **Scale** | Linear or Log frequency axis. Log (20 Hz up) spreads out the low end, which suits voice and music. |
+| **Scale** | Linear (0–10,000 Hz) or Log (20–10,000 Hz) frequency axis. Log spreads out the low end, which suits voice and music. |
 | **Colormap** | viridis, magma, or gray. |
 | **Floor / Ceiling** | The dB range mapped to dark → bright. Raise the floor to hide background noise; lower the ceiling to bring out quiet sounds. 0 dB is a full-scale sine wave. |
 
 The display controls apply to both the live view and the recorded clip.
 
-Below the controls, the **Echo** box repeats whatever you type under
-**Output**, as you type it. Press **Enter** to clear the box; Output keeps
+Below the controls, the **Echo** box repeats whatever you type in the
+**Output** box beneath it, as you type it. Press **Enter** to clear the box; Output keeps
 showing the last line. The text stays on the page: it isn't saved, sent
 anywhere, or tied to recordings.
 
 ### Studying a recording
 
-After you stop recording, the clip appears in the lower panel.
+After you stop recording, the clip appears in the lower panel, with time in
+seconds along the bottom.
 
 - **Hover** to read the time, frequency, and level under the cursor, e.g.
   `t = 1.45 s · f = 1,027 Hz · −6.2 dB`.

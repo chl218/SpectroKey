@@ -38,10 +38,17 @@
     overflow-x: hidden;
   }
   h1 { font-size: 1.25rem; margin: 0 0 8px; }
-  .view { display: flex; gap: 6px; align-items: stretch; }
-  .axis { position: relative; width: 38px; flex: none; font-size: 0.7rem; color: var(--muted); }
+  /* Spectrogram grid: [y title | y ticks | canvas], then x ticks and x title under the canvas. */
+  .view { display: grid; grid-template-columns: 1.2em 38px minmax(0, 1fr); column-gap: 6px; }
+  .y-title { grid-column: 1; writing-mode: vertical-rl; transform: rotate(180deg);
+    text-align: center; font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+  .axis { grid-column: 2; position: relative; font-size: 0.7rem; color: var(--muted); }
   .axis span { position: absolute; right: 0; transform: translateY(-50%); white-space: nowrap; }
-  .canvas-wrap { position: relative; flex: 1; min-width: 0; }
+  .canvas-wrap { grid-column: 3; position: relative; min-width: 0; }
+  .x-ticks { grid-column: 3; position: relative; height: 1.3em; margin-top: 2px;
+    font-size: 0.7rem; color: var(--muted); }
+  .x-ticks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+  .x-title { grid-column: 3; text-align: center; font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
   canvas { display: block; width: 100%; background: #000; border: 1px solid var(--border); }
   #live-canvas { height: 45vh; min-height: 200px; }
   #analysis-canvas { height: 260px; image-rendering: pixelated; touch-action: pan-y; }
@@ -65,11 +72,16 @@
   .overlay button[hidden] { display: none; }
   #status { min-height: 1.4em; margin: 4px 0 16px; color: var(--muted); font-size: 0.9rem; }
   #status.error { color: var(--danger); }
-  #echo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
-  #echo-in { flex: 1 1 200px; min-width: 0; font: inherit; padding: 6px 8px; border-radius: 6px;
-    border: 1px solid var(--border); background: var(--panel); color: var(--fg); }
-  .echo-label { flex-basis: 100%; }
-  #echo-out { flex-basis: 100%; min-height: 1.4em; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* Echo and Output: labels share one column so both boxes start and end at the same place. */
+  #echo { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 10px;
+    align-items: center; margin-top: 12px; max-width: 640px; }
+  #echo-in, #echo-out { box-sizing: border-box; width: 100%; min-height: 2.2em; font: inherit;
+    padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--fg); }
+  #echo-out { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
+  @media (max-width: 420px) {
+    #echo { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  }
   #analysis { margin-top: 8px; }
   #readout { margin-top: 8px; font-size: 0.9rem; color: var(--muted); }
 </style>
@@ -78,6 +90,7 @@
 <h1>SpectroKey</h1>
 
 <div class="view">
+  <div class="y-title">Frequency (Hz)</div>
   <div class="axis" id="live-axis" aria-hidden="true"></div>
   <div class="canvas-wrap">
     <canvas id="live-canvas" aria-label="Live spectrogram"></canvas>
@@ -86,6 +99,7 @@
       <button id="retry" type="button">Retry</button>
     </div>
   </div>
+  <div class="x-title">Time → (newest on the right)</div>
 </div>
 
 <div class="controls">
@@ -110,7 +124,7 @@
 <div id="echo">
   <label for="echo-in">Echo</label>
   <input id="echo-in" type="text" placeholder="Type something" autocomplete="off">
-  <span class="echo-label" id="echo-out-label">Output</span>
+  <span id="echo-out-label">Output</span>
   <output id="echo-out" for="echo-in" aria-labelledby="echo-out-label" aria-live="polite"></output>
 </div>
 
@@ -118,8 +132,11 @@
 
 <section id="analysis">
   <div class="view">
+    <div class="y-title">Frequency (Hz)</div>
     <div class="axis" id="analysis-axis" aria-hidden="true"></div>
     <div class="canvas-wrap"><canvas id="analysis-canvas" aria-label="Recorded clip analysis"></canvas></div>
+    <div class="x-ticks" id="analysis-time-axis" aria-hidden="true"></div>
+    <div class="x-title">Time (s)</div>
   </div>
   <div id="readout"></div>
   <div class="controls">

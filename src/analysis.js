@@ -2,6 +2,7 @@
 import { stft } from './dsp.js';
 import {
   paintColumn, rowToHz, rowBinRange, maxDb, poolFrames, columnFrameRange,
+  timeTicks, formatSeconds,
 } from './render.js';
 import { encodeWav } from './wav.js';
 
@@ -22,7 +23,10 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function createAnalysisView(canvas, readoutEl, onError = () => {}) {
+// Roughly one time label per this many CSS pixels.
+const PX_PER_TICK = 70;
+
+export function createAnalysisView(canvas, readoutEl, onError = () => {}, timeAxisEl = null) {
   const ctx2d = canvas.getContext('2d');
   const wrap = canvas.parentElement;
 
@@ -71,6 +75,30 @@ export function createAnalysisView(canvas, readoutEl, onError = () => {}) {
     };
     for (let x = 0; x < w; x++) paintColumn(img, x, pooled[x], p);
     ctx2d.putImageData(img, 0, 0);
+    drawTimeAxis();
+  }
+
+  // Seconds at fraction p (0 = left edge, 1 = right edge) of the current view.
+  // Matches the hover readout: a frame's time is the centre of its window.
+  function timeAt(p) {
+    const framePos = viewStart + p * (viewEnd - viewStart) - 0.5;
+    return (framePos * hop + fftSize / 2) / sampleRate;
+  }
+
+  function drawTimeAxis() {
+    if (!timeAxisEl) return;
+    timeAxisEl.textContent = '';
+    const cssW = canvas.clientWidth;
+    if (!frames.length || !cssW) return;
+    const t0 = timeAt(0);
+    const t1 = timeAt(1);
+    const { step, ticks } = timeTicks(t0, t1, Math.max(2, Math.floor(cssW / PX_PER_TICK)));
+    for (const t of ticks) {
+      const span = document.createElement('span');
+      span.textContent = formatSeconds(t, step);
+      span.style.left = `${((t - t0) / (t1 - t0)) * 100}%`;
+      timeAxisEl.appendChild(span);
+    }
   }
 
   // Display x (CSS px from the canvas's left edge) -> pixel column index.
@@ -104,6 +132,7 @@ export function createAnalysisView(canvas, readoutEl, onError = () => {}) {
       ctx2d.fillStyle = '#000';
       ctx2d.fillRect(0, 0, canvas.width, canvas.height);
       empty.style.display = 'flex';
+      drawTimeAxis();
       return;
     }
     empty.style.display = 'none';
