@@ -43,11 +43,16 @@ export function fft(re, im) {
   // 4-point DFTs, and so on until one n-point DFT remains (log2(n) stages).
   for (let size = 2; size <= n; size <<= 1) {
     const half = size >> 1;
-    const angle = (-2 * Math.PI) / size; // twiddle step: W = e^(-2*pi*i/size)
-    for (let start = 0; start < n; start += size) { // each block of `size` samples
-      for (let k = 0; k < half; k++) {
-        const wr = Math.cos(angle * k); // twiddle factor for this position
-        const wi = Math.sin(angle * k);
+    // Twiddle factors for this stage are W^k = e^(-2*pi*i*k/size), k = 0..half-1.
+    // Compute the step W once (two trig calls per stage) and get each next W^k
+    // by complex-multiplying the previous one by W, instead of cos/sin per butterfly.
+    const angle = (-2 * Math.PI) / size;
+    const stepR = Math.cos(angle);
+    const stepI = Math.sin(angle);
+    let wr = 1; // W^0 = 1
+    let wi = 0;
+    for (let k = 0; k < half; k++) { // position within each block; same twiddle for all blocks
+      for (let start = 0; start < n; start += size) { // each block of `size` samples
         const a = start + k;            // top element of the butterfly
         const b = a + half;             // bottom element
         // t = twiddle * x[b] (complex multiply)
@@ -57,6 +62,10 @@ export function fft(re, im) {
         re[b] = re[a] - tr; im[b] = im[a] - ti;
         re[a] += tr;        im[a] += ti;
       }
+      // Advance the twiddle: W^(k+1) = W^k * W.
+      const nr = wr * stepR - wi * stepI;
+      wi = wr * stepI + wi * stepR;
+      wr = nr;
     }
   }
 }

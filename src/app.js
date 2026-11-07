@@ -21,10 +21,18 @@ const el = {
 };
 
 const ERRORS = {
-  denied: 'Microphone access was blocked.',
+  denied: "Microphone access was blocked. Allow it in your browser's site settings, then Retry.",
   unavailable: 'No usable microphone was found.',
   unsupported: "This browser can't record audio.",
 };
+const INSECURE = 'Microphone needs HTTPS (or localhost).';
+
+// Let the browser paint (e.g. an "Analyzing…" status) before heavy synchronous work.
+function nextPaint() {
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+let recordToken = 0; // newest recording wins if several are queued
+let fftToken = 0; // newest FFT-size change wins
 
 let lut = colormapLut(el.colormap.value);
 let view = null;
@@ -113,7 +121,9 @@ function hideOverlay() { el.overlay.hidden = true; }
 
 function showMicError(err) {
   const kind = err instanceof MicError ? err.kind : 'unavailable';
-  const msg = ERRORS[kind] || ERRORS.unavailable;
+  const msg = kind === 'unsupported' && window.isSecureContext === false
+    ? INSECURE
+    : ERRORS[kind] || ERRORS.unavailable;
   showOverlay(msg, kind !== 'unsupported');
   setStatus(msg, true);
 }
@@ -149,7 +159,7 @@ async function onStart() {
 }
 
 // --- recording ---
-function finishRecording(samples, autoStopped = false) {
+async function finishRecording(samples, autoStopped = false) {
   state.recording = null;
   const sampleRate = state.mic.ctx.sampleRate;
   state.clip = { samples, sampleRate };
@@ -157,6 +167,12 @@ function finishRecording(samples, autoStopped = false) {
   const hasAudio = samples.length > 0;
   el.exportPng.disabled = !hasAudio;
   el.exportWav.disabled = !hasAudio;
+  const token = ++recordToken;
+  if (hasAudio) {
+    setStatus('Analyzing…');
+    await nextPaint();
+    if (token !== recordToken) return; // a newer recording took over
+  }
   try {
     analysis.show(samples, sampleRate, getOpts());
   } catch (err) {
@@ -203,8 +219,16 @@ el.clear.addEventListener('click', () => {
   c.fillStyle = '#000';
   c.fillRect(0, 0, el.live.width, el.live.height);
 });
-el.fft.addEventListener('change', () => {
+el.fft.addEventListener('change', async () => {
   if (state.mic) state.mic.analyser.fftSize = Number(el.fft.value);
+  if (!state.clip || !state.clip.samples.length) { safeRerender(); return; }
+  // A new FFT size reruns the STFT: show progress first.
+  const token = ++fftToken;
+  const prev = { text: el.status.textContent, error: el.status.classList.contains('error') };
+  setStatus('Analyzing…');
+  await nextPaint();
+  if (token !== fftToken) return;
+  setStatus(prev.text, prev.error);
   safeRerender();
 });
 el.scale.addEventListener('change', () => {

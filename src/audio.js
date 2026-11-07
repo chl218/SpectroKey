@@ -11,6 +11,10 @@ export class MicError extends Error {
 
 // Ask for the mic and return the live audio graph's first nodes.
 export async function startMic() {
+  // getUserMedia only exists in secure contexts (HTTPS or localhost).
+  if (window.isSecureContext === false) {
+    throw new MicError('unsupported', 'Microphone needs HTTPS (or localhost).');
+  }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     throw new MicError('unsupported', 'This browser cannot access a microphone.');
   }
