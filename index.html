@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpectroKey</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --fg: #1a1d21;
+    --muted: #5c6670;
+    --panel: #ffffff;
+    --border: #c9d0d8;
+    --accent: #1f6feb;
+    --accent-fg: #ffffff;
+    --danger: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171b;
+      --fg: #e6e9ed;
+      --muted: #9aa5b1;
+      --panel: #1d2127;
+      --border: #3a424c;
+      --accent: #4c8dff;
+      --accent-fg: #0b0e12;
+      --danger: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.4;
+    padding: 12px 16px 32px;
+    overflow-x: hidden;
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 8px; }
+  .view { display: flex; gap: 6px; align-items: stretch; }
+  .axis { position: relative; width: 38px; flex: none; font-size: 0.7rem; color: var(--muted); }
+  .axis span { position: absolute; right: 0; transform: translateY(-50%); white-space: nowrap; }
+  .canvas-wrap { position: relative; flex: 1; min-width: 0; }
+  canvas { display: block; width: 100%; background: #000; border: 1px solid var(--border); }
+  #live-canvas { height: 45vh; min-height: 200px; }
+  #analysis-canvas { height: 260px; }
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px; padding: 12px; text-align: center;
+    background: rgba(0, 0, 0, 0.72); color: #fff;
+  }
+  .overlay[hidden] { display: none; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 12px 0 8px; }
+  .controls label { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
+  .controls input[type=range] { width: 110px; }
+  button, select {
+    font: inherit; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--fg);
+  }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .overlay button { background: #fff; color: #000; border-color: #fff; }
+  .overlay button[hidden] { display: none; }
+  #status { min-height: 1.4em; margin: 4px 0 16px; color: var(--muted); font-size: 0.9rem; }
+  #status.error { color: var(--danger); }
+  #analysis { margin-top: 8px; }
+  #readout { margin-top: 8px; font-size: 0.9rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>SpectroKey</h1>
+
+<div class="view">
+  <div class="axis" id="live-axis" aria-hidden="true"></div>
+  <div class="canvas-wrap">
+    <canvas id="live-canvas" aria-label="Live spectrogram"></canvas>
+    <div class="overlay" id="live-overlay" role="alert" hidden>
+      <div id="live-overlay-msg"></div>
+      <button id="retry" type="button">Retry</button>
+    </div>
+  </div>
+</div>
+
+<div class="controls">
+  <button id="start" class="primary" type="button">Start mic</button>
+  <button id="record" type="button" disabled>Record</button>
+  <button id="clear" type="button">Clear</button>
+  <label>FFT
+    <select id="fft">
+      <option>512</option><option>1024</option><option selected>2048</option><option>4096</option><option>8192</option>
+    </select>
+  </label>
+  <label>Scale
+    <select id="scale"><option value="linear">Linear</option><option value="log">Log</option></select>
+  </label>
+  <label>Colormap
+    <select id="colormap"><option>viridis</option><option>magma</option><option>gray</option></select>
+  </label>
+  <label>Floor <input id="floor" type="range" min="-140" max="-20" step="1" value="-100"><output id="floor-out">-100</output> dB</label>
+  <label>Ceiling <input id="ceil" type="range" min="-100" max="0" step="1" value="-10"><output id="ceil-out">-10</output> dB</label>
+</div>
+
+<div id="status" role="status" aria-live="polite"></div>
+
+<section id="analysis">
+  <div class="view">
+    <div class="axis" id="analysis-axis" aria-hidden="true"></div>
+    <div class="canvas-wrap"><canvas id="analysis-canvas" aria-label="Recorded clip analysis"></canvas></div>
+  </div>
+  <div id="readout"></div>
+</section>
+
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
