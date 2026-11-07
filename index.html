@@ -44,7 +44,7 @@
   .canvas-wrap { position: relative; flex: 1; min-width: 0; }
   canvas { display: block; width: 100%; background: #000; border: 1px solid var(--border); }
   #live-canvas { height: 45vh; min-height: 200px; }
-  #analysis-canvas { height: 260px; }
+  #analysis-canvas { height: 260px; image-rendering: pixelated; touch-action: pan-y; }
   .overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 10px; padding: 12px; text-align: center;
@@ -110,6 +110,10 @@
     <div class="canvas-wrap"><canvas id="analysis-canvas" aria-label="Recorded clip analysis"></canvas></div>
   </div>
   <div id="readout"></div>
+  <div class="controls">
+    <button id="export-png" type="button" disabled>Export PNG</button>
+    <button id="export-wav" type="button" disabled>Export WAV</button>
+  </div>
 </section>
 
 <script type="module" src="src/app.js"></script>

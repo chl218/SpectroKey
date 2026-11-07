@@ -2,6 +2,7 @@
 import { startMic, MicError, startRecording } from './audio.js';
 import { colormapLut, rowToHz } from './render.js';
 import { createLiveView } from './live.js';
+import { createAnalysisView } from './analysis.js';
 
 const MAX_SECONDS = 30;
 const $ = (id) => document.getElementById(id);
@@ -15,7 +16,8 @@ const el = {
   start: $('start'), record: $('record'), clear: $('clear'),
   fft: $('fft'), scale: $('scale'), colormap: $('colormap'),
   floor: $('floor'), ceil: $('ceil'), floorOut: $('floor-out'), ceilOut: $('ceil-out'),
-  status: $('status'),
+  status: $('status'), readout: $('readout'),
+  exportPng: $('export-png'), exportWav: $('export-wav'),
 };
 
 const ERRORS = {
@@ -26,6 +28,7 @@ const ERRORS = {
 
 let lut = colormapLut(el.colormap.value);
 let view = null;
+const analysis = createAnalysisView(el.analysisCanvas, el.readout);
 let starting = false;
 
 function setStatus(text, isError = false) {
@@ -36,16 +39,15 @@ function setStatus(text, isError = false) {
 function getOpts() {
   return {
     floorDb: Number(el.floor.value), ceilDb: Number(el.ceil.value),
-    scale: el.scale.value, lut,
+    scale: el.scale.value, lut, fftSize: Number(el.fft.value),
   };
 }
 
 // --- canvas sizing and axis labels ---
 function sampleRate() { return state.mic ? state.mic.ctx.sampleRate : 48000; }
 
-function drawAxis(axisEl, canvas) {
+function drawAxis(axisEl, canvas, sr) {
   const h = canvas.height;
-  const sr = sampleRate();
   const nyquist = sr / 2;
   const log = el.scale.value === 'log';
   const marks = log
@@ -82,12 +84,12 @@ function sizeCanvas(canvas) {
 }
 
 function drawAxes() {
-  drawAxis(el.liveAxis, el.live);
-  drawAxis(el.analysisAxis, el.analysisCanvas);
+  drawAxis(el.liveAxis, el.live, sampleRate());
+  drawAxis(el.analysisAxis, el.analysisCanvas, state.clip ? state.clip.sampleRate : sampleRate());
 }
 function layout() {
   sizeCanvas(el.live);
-  sizeCanvas(el.analysisCanvas);
+  if (state.clip) analysis.rerender(getOpts());
   drawAxes();
 }
 
@@ -137,13 +139,18 @@ async function onStart() {
 }
 
 // --- recording ---
-function finishRecording(samples) {
+function finishRecording(samples, autoStopped = false) {
   state.recording = null;
-  state.clip = samples;
+  const sampleRate = state.mic.ctx.sampleRate;
+  state.clip = { samples, sampleRate };
   el.record.textContent = 'Record';
-  const secs = samples.length / state.mic.ctx.sampleRate;
-  setStatus(`Recorded ${secs.toFixed(1)} s`);
-  return secs;
+  const hasAudio = samples.length > 0;
+  el.exportPng.disabled = !hasAudio;
+  el.exportWav.disabled = !hasAudio;
+  analysis.show(samples, sampleRate, getOpts());
+  drawAxes();
+  if (autoStopped) setStatus(`Recording stopped at ${MAX_SECONDS} s limit.`);
+  else setStatus(`Recorded ${(samples.length / sampleRate).toFixed(1)} s`);
 }
 
 async function onRecord() {
@@ -156,15 +163,13 @@ async function onRecord() {
   try {
     const rec = await startRecording(state.mic.ctx, state.mic.source, {
       maxSeconds: MAX_SECONDS,
-      onAutoStop: (samples) => {
-        const secs = finishRecording(samples);
-        setStatus(`Reached the ${MAX_SECONDS} s limit. Recorded ${secs.toFixed(1)} s`);
-      },
+      onAutoStop: (samples) => finishRecording(samples, true),
     });
     state.recording = rec;
     el.record.textContent = 'Stop';
     setStatus('Recording...');
   } catch (err) {
+    console.error(err);
     setStatus('Could not start recording.', true);
   } finally {
     el.record.disabled = false;
@@ -183,9 +188,18 @@ el.clear.addEventListener('click', () => {
 });
 el.fft.addEventListener('change', () => {
   if (state.mic) state.mic.analyser.fftSize = Number(el.fft.value);
+  if (state.clip) analysis.rerender(getOpts());
 });
-el.scale.addEventListener('change', drawAxes);
-el.colormap.addEventListener('change', () => { lut = colormapLut(el.colormap.value); });
+el.scale.addEventListener('change', () => {
+  if (state.clip) analysis.rerender(getOpts());
+  drawAxes();
+});
+el.colormap.addEventListener('change', () => {
+  lut = colormapLut(el.colormap.value);
+  if (state.clip) analysis.rerender(getOpts());
+});
+el.exportPng.addEventListener('click', () => analysis.exportPng());
+el.exportWav.addEventListener('click', () => analysis.exportWav());
 
 function onDb(moved) {
   let floor = Number(el.floor.value);
@@ -197,6 +211,7 @@ function onDb(moved) {
   }
   el.floorOut.textContent = el.floor.value;
   el.ceilOut.textContent = el.ceil.value;
+  if (state.clip) analysis.rerender(getOpts());
 }
 el.floor.addEventListener('input', () => onDb('floor'));
 el.ceil.addEventListener('input', () => onDb('ceil'));
