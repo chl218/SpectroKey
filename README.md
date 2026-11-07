@@ -39,6 +39,10 @@ time scrolls right to left. Brighter = louder.
 
 The display controls apply to both the live view and the recorded clip.
 
+Below the controls, the **Echo** box repeats whatever you type, as you type
+it. The text stays on the page: it isn't saved, sent anywhere, or tied to
+recordings.
+
 ### Studying a recording
 
 After you stop recording, the clip appears in the lower panel.
@@ -77,6 +81,7 @@ After you stop recording, the clip appears in the lower panel.
 | `src/wav.js`, `src/clip.js` | WAV encoding, 30 s capped sample buffer |
 | `src/audio.js`, `src/recorder-worklet.js` | Microphone and recording |
 | `src/live.js`, `src/analysis.js`, `src/app.js` | Live view, clip panel, UI wiring |
+| `src/echo.js` | Echo box |
 
 ## Tests
 

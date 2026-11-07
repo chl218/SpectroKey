@@ -3,6 +3,7 @@ import { startMic, MicError, startRecording } from './audio.js';
 import { colormapLut, rowToHz } from './render.js';
 import { createLiveView } from './live.js';
 import { createAnalysisView } from './analysis.js';
+import { wireEcho } from './echo.js';
 
 const MAX_SECONDS = 30;
 const $ = (id) => document.getElementById(id);
@@ -256,6 +257,8 @@ function onDb(moved) {
 }
 el.floor.addEventListener('input', () => onDb('floor'));
 el.ceil.addEventListener('input', () => onDb('ceil'));
+
+wireEcho($('echo-in'), $('echo-out'));
 
 window.addEventListener('resize', layout);
 layout();
