@@ -1,6 +1,8 @@
 // Browser-only: static spectrogram of a recorded clip with hover readout, drag-zoom and exports.
 import { stft } from './dsp.js';
-import { paintColumn, rowToHz } from './render.js';
+import {
+  paintColumn, rowToHz, rowBinRange, maxDb, poolFrames, columnFrameRange,
+} from './render.js';
 import { encodeWav } from './wav.js';
 
 const MINUS = '−';
@@ -41,12 +43,25 @@ export function createAnalysisView(canvas, readoutEl, onError = () => {}) {
   let viewStart = 0;
   let viewEnd = 0; // exclusive
   let lastOpts = null;
+  // Pixel columns currently drawn: one per frame when zoomed in, otherwise each
+  // column max-pools the frames that fall in it. `pooled` is cached per view.
+  let columns = 0;
+  let pooled = [];
+  let pooledKey = '';
 
   function paint() {
     if (!frames.length || !lastOpts) return;
     const dpr = window.devicePixelRatio || 1;
-    const w = Math.max(1, viewEnd - viewStart);
+    const n = Math.max(1, viewEnd - viewStart);
+    const displayW = Math.max(1, Math.round(canvas.clientWidth * dpr));
+    const w = Math.min(n, displayW);
     const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    const key = `${viewStart}|${viewEnd}|${w}`;
+    if (key !== pooledKey) {
+      pooled = poolFrames(frames, viewStart, viewEnd, w);
+      pooledKey = key;
+    }
+    columns = w;
     canvas.width = w;
     canvas.height = h;
     const img = ctx2d.createImageData(w, h);
@@ -54,14 +69,20 @@ export function createAnalysisView(canvas, readoutEl, onError = () => {}) {
       floorDb: lastOpts.floorDb, ceilDb: lastOpts.ceilDb, scale: lastOpts.scale,
       lut: lastOpts.lut, sampleRate,
     };
-    for (let x = 0; x < w; x++) paintColumn(img, x, frames[viewStart + x], p);
+    for (let x = 0; x < w; x++) paintColumn(img, x, pooled[x], p);
     ctx2d.putImageData(img, 0, 0);
+  }
+
+  // Display x (CSS px from the canvas's left edge) -> pixel column index.
+  function xToColumn(x, cssWidth) {
+    return Math.min(columns - 1, Math.max(0, Math.floor((x / cssWidth) * columns)));
   }
 
   function compute(opts) {
     fftSize = opts.fftSize;
     hop = fftSize / 4;
     frames = stft(samples, fftSize, hop);
+    pooledKey = '';
     viewStart = 0;
     viewEnd = frames.length;
   }
@@ -75,6 +96,8 @@ export function createAnalysisView(canvas, readoutEl, onError = () => {}) {
     if (!samples || samples.length === 0) {
       samples = null;
       frames = [];
+      pooled = [];
+      pooledKey = '';
       fftSize = 0;
       canvas.width = 1;
       canvas.height = Math.max(1, canvas.clientHeight);
@@ -105,18 +128,19 @@ export function createAnalysisView(canvas, readoutEl, onError = () => {}) {
   // --- hover readout ---
   function fmtReadout(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    if (!frames.length || !rect.width || !rect.height) return '';
-    const n = viewEnd - viewStart;
-    const col = Math.min(n - 1, Math.max(0, Math.floor(((clientX - rect.left) / rect.width) * n)));
-    const frameIdx = viewStart + col;
+    if (!frames.length || !columns || !rect.width || !rect.height) return '';
+    const col = xToColumn(clientX - rect.left, rect.width);
+    const [a, b] = columnFrameRange(col, viewStart, viewEnd, columns);
     const row = Math.min(canvas.height - 1,
       Math.max(0, Math.floor(((clientY - rect.top) / rect.height) * canvas.height)));
     const hz = rowToHz(row, canvas.height, sampleRate, lastOpts.scale);
-    const column = frames[frameIdx];
-    const bin = Math.min(column.length - 1,
-      Math.max(0, Math.round((hz / (sampleRate / 2)) * column.length)));
-    const t = (frameIdx * hop) / sampleRate;
-    const db = column[bin];
+    // Same value the pixel was painted from: max over the column's frames and the row's bins.
+    const column = pooled[col];
+    const [lo, hi] = rowBinRange(row, canvas.height, column.length, sampleRate, lastOpts.scale);
+    const db = maxDb(column, lo, hi);
+    // Time at the centre of the analysis window, for the middle of the column's frames.
+    const midFrame = (a + b - 1) / 2;
+    const t = (midFrame * hop + fftSize / 2) / sampleRate;
     const dbText = db < 0 ? `${MINUS}${Math.abs(db).toFixed(1)}` : db.toFixed(1);
     return `t = ${t.toFixed(2)} s · f = ${Math.round(hz).toLocaleString('en-US')} Hz · ${dbText} dB`;
   }
@@ -158,11 +182,14 @@ export function createAnalysisView(canvas, readoutEl, onError = () => {}) {
     sel.style.display = 'none';
     if (!apply || x1 - x0 < 2) return;
     const w = canvas.getBoundingClientRect().width;
-    const n = viewEnd - viewStart;
-    const s = viewStart + Math.floor((x0 / w) * n);
-    const en = viewStart + Math.max(Math.ceil((x1 / w) * n), Math.floor((x0 / w) * n) + 1);
-    viewStart = Math.min(s, viewEnd - 1);
-    viewEnd = Math.min(en, viewEnd);
+    if (!w || !columns) return;
+    // Pixel columns under the selection -> the frames they cover (view stays in frames).
+    const c0 = xToColumn(x0, w);
+    const c1 = Math.max(c0, xToColumn(Math.max(x0, x1 - 1e-6), w));
+    const s = columnFrameRange(c0, viewStart, viewEnd, columns)[0];
+    const en = columnFrameRange(c1, viewStart, viewEnd, columns)[1];
+    viewStart = s;
+    viewEnd = Math.max(en, s + 1);
     paint();
   }
   canvas.addEventListener('pointerup', (e) => endDrag(e, true));
